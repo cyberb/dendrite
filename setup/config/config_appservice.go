@@ -83,6 +83,17 @@ type ApplicationService struct {
 	Protocols []string `yaml:"protocols"`
 }
 
+func (a *ApplicationService) IsUnixSocketUrl() bool {
+	return strings.HasPrefix(a.URL, "/")
+}
+func (a *ApplicationService) RequestUrl() string {
+	if a.IsUnixSocketUrl() {
+		return fmt.Sprintf("http://unix%s", a.URL)
+	} else {
+		return a.URL
+	}
+}
+
 // IsInterestedInRoomID returns a bool on whether an application service's
 // namespace includes the given room ID
 func (a *ApplicationService) IsInterestedInRoomID(

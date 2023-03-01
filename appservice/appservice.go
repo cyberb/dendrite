@@ -16,12 +16,8 @@ package appservice
 
 import (
 	"context"
-	"crypto/tls"
-	"net/http"
-	"sync"
-	"time"
-
 	"github.com/sirupsen/logrus"
+	"sync"
 
 	"github.com/matrix-org/gomatrixserverlib"
 
@@ -41,20 +37,10 @@ func NewInternalAPI(
 	userAPI userapi.AppserviceUserAPI,
 	rsAPI roomserverAPI.RoomserverInternalAPI,
 ) appserviceAPI.AppServiceInternalAPI {
-	client := &http.Client{
-		Timeout: time.Second * 30,
-		Transport: &http.Transport{
-			DisableKeepAlives: true,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: base.Cfg.AppServiceAPI.DisableTLSValidation,
-			},
-			Proxy: http.ProxyFromEnvironment,
-		},
-	}
+
 	// Create appserivce query API with an HTTP client that will be used for all
 	// outbound and inbound requests (inbound only for the internal API)
 	appserviceQueryAPI := &query.AppServiceQueryAPI{
-		HTTPClient:    client,
 		Cfg:           &base.Cfg.AppServiceAPI,
 		ProtocolCache: map[string]appserviceAPI.ASProtocolResponse{},
 		CacheMu:       sync.Mutex{},
@@ -81,7 +67,7 @@ func NewInternalAPI(
 	js, _ := base.NATS.Prepare(base.ProcessContext, &base.Cfg.Global.JetStream)
 	consumer := consumers.NewOutputRoomEventConsumer(
 		base.ProcessContext, &base.Cfg.AppServiceAPI,
-		client, js, rsAPI,
+		js, rsAPI,
 	)
 	if err := consumer.Start(); err != nil {
 		logrus.WithError(err).Panicf("failed to start appservice roomserver consumer")

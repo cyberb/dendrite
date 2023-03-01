@@ -19,14 +19,14 @@ package query
 import (
 	"context"
 	"encoding/json"
+	"github.com/matrix-org/dendrite/appservice/client"
+	"github.com/opentracing/opentracing-go"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
-
-	"github.com/opentracing/opentracing-go"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/matrix-org/dendrite/appservice/api"
 	"github.com/matrix-org/dendrite/setup/config"
@@ -37,7 +37,6 @@ const userIDExistsPath = "/users/"
 
 // AppServiceQueryAPI is an implementation of api.AppServiceQueryAPI
 type AppServiceQueryAPI struct {
-	HTTPClient    *http.Client
 	Cfg           *config.AppServiceAPI
 	ProtocolCache map[string]api.ASProtocolResponse
 	CacheMu       sync.Mutex
@@ -54,16 +53,16 @@ func (a *AppServiceQueryAPI) RoomAliasExists(
 	defer span.Finish()
 
 	// Determine which application service should handle this request
-	for _, appservice := range a.Cfg.Derived.ApplicationServices {
-		if appservice.URL != "" && appservice.IsInterestedInRoomAlias(request.Alias) {
+	for _, as := range a.Cfg.Derived.ApplicationServices {
+		if as.URL != "" && as.IsInterestedInRoomAlias(request.Alias) {
 			// The full path to the rooms API, includes hs token
-			URL, err := url.Parse(appservice.URL + roomAliasExistsPath)
+			URL, err := url.Parse(as.RequestUrl() + roomAliasExistsPath)
 			if err != nil {
 				return err
 			}
 
 			URL.Path += request.Alias
-			apiURL := URL.String() + "?access_token=" + appservice.HSToken
+			apiURL := URL.String() + "?access_token=" + as.HSToken
 
 			// Send a request to each application service. If one responds that it has
 			// created the room, immediately return.
@@ -73,20 +72,20 @@ func (a *AppServiceQueryAPI) RoomAliasExists(
 			}
 			req = req.WithContext(ctx)
 
-			resp, err := a.HTTPClient.Do(req)
+			resp, err := client.CreateHTTPClient(as.URL, a.Cfg.DisableTLSValidation).Do(req)
 			if resp != nil {
 				defer func() {
 					err = resp.Body.Close()
 					if err != nil {
 						log.WithFields(log.Fields{
-							"appservice_id": appservice.ID,
+							"appservice_id": as.ID,
 							"status_code":   resp.StatusCode,
 						}).WithError(err).Error("Unable to close application service response body")
 					}
 				}()
 			}
 			if err != nil {
-				log.WithError(err).Errorf("Issue querying room alias on application service %s", appservice.ID)
+				log.WithError(err).Errorf("Issue querying room alias on application service %s", as.ID)
 				return err
 			}
 			switch resp.StatusCode {
@@ -99,7 +98,7 @@ func (a *AppServiceQueryAPI) RoomAliasExists(
 			default:
 				// Application service reported an error. Warn
 				log.WithFields(log.Fields{
-					"appservice_id": appservice.ID,
+					"appservice_id": as.ID,
 					"status_code":   resp.StatusCode,
 				}).Warn("Application service responded with non-OK status code")
 			}
@@ -121,15 +120,15 @@ func (a *AppServiceQueryAPI) UserIDExists(
 	defer span.Finish()
 
 	// Determine which application service should handle this request
-	for _, appservice := range a.Cfg.Derived.ApplicationServices {
-		if appservice.URL != "" && appservice.IsInterestedInUserID(request.UserID) {
+	for _, as := range a.Cfg.Derived.ApplicationServices {
+		if as.URL != "" && as.IsInterestedInUserID(request.UserID) {
 			// The full path to the rooms API, includes hs token
-			URL, err := url.Parse(appservice.URL + userIDExistsPath)
+			URL, err := url.Parse(as.RequestUrl() + userIDExistsPath)
 			if err != nil {
 				return err
 			}
 			URL.Path += request.UserID
-			apiURL := URL.String() + "?access_token=" + appservice.HSToken
+			apiURL := URL.String() + "?access_token=" + as.HSToken
 
 			// Send a request to each application service. If one responds that it has
 			// created the user, immediately return.
@@ -137,13 +136,13 @@ func (a *AppServiceQueryAPI) UserIDExists(
 			if err != nil {
 				return err
 			}
-			resp, err := a.HTTPClient.Do(req.WithContext(ctx))
+			resp, err := client.CreateHTTPClient(as.URL, a.Cfg.DisableTLSValidation).Do(req.WithContext(ctx))
 			if resp != nil {
 				defer func() {
 					err = resp.Body.Close()
 					if err != nil {
 						log.WithFields(log.Fields{
-							"appservice_id": appservice.ID,
+							"appservice_id": as.ID,
 							"status_code":   resp.StatusCode,
 						}).Error("Unable to close application service response body")
 					}
@@ -151,7 +150,7 @@ func (a *AppServiceQueryAPI) UserIDExists(
 			}
 			if err != nil {
 				log.WithFields(log.Fields{
-					"appservice_id": appservice.ID,
+					"appservice_id": as.ID,
 				}).WithError(err).Error("issue querying user ID on application service")
 				return err
 			}
@@ -163,7 +162,7 @@ func (a *AppServiceQueryAPI) UserIDExists(
 
 			// Log non OK
 			log.WithFields(log.Fields{
-				"appservice_id": appservice.ID,
+				"appservice_id": as.ID,
 				"status_code":   resp.StatusCode,
 			}).Warn("application service responded with non-OK status code")
 		}
@@ -212,12 +211,12 @@ func (a *AppServiceQueryAPI) Locations(
 		var asLocations []api.ASLocationResponse
 		params.Set("access_token", as.HSToken)
 
-		url := as.URL + api.ASLocationPath
+		url := as.RequestUrl() + api.ASLocationPath
 		if req.Protocol != "" {
 			url += "/" + req.Protocol
 		}
 
-		if err := requestDo[[]api.ASLocationResponse](a.HTTPClient, url+"?"+params.Encode(), &asLocations); err != nil {
+		if err := requestDo[[]api.ASLocationResponse](client.CreateHTTPClient(as.URL, a.Cfg.DisableTLSValidation), url+"?"+params.Encode(), &asLocations); err != nil {
 			log.WithError(err).Error("unable to get 'locations' from application service")
 			continue
 		}
@@ -247,12 +246,12 @@ func (a *AppServiceQueryAPI) User(
 		var asUsers []api.ASUserResponse
 		params.Set("access_token", as.HSToken)
 
-		url := as.URL + api.ASUserPath
+		url := as.RequestUrl() + api.ASUserPath
 		if req.Protocol != "" {
 			url += "/" + req.Protocol
 		}
 
-		if err := requestDo[[]api.ASUserResponse](a.HTTPClient, url+"?"+params.Encode(), &asUsers); err != nil {
+		if err := requestDo[[]api.ASUserResponse](client.CreateHTTPClient(as.URL, a.Cfg.DisableTLSValidation), url+"?"+params.Encode(), &asUsers); err != nil {
 			log.WithError(err).Error("unable to get 'user' from application service")
 			continue
 		}
@@ -290,7 +289,7 @@ func (a *AppServiceQueryAPI) Protocols(
 		response := api.ASProtocolResponse{}
 		for _, as := range a.Cfg.Derived.ApplicationServices {
 			var proto api.ASProtocolResponse
-			if err := requestDo[api.ASProtocolResponse](a.HTTPClient, as.URL+api.ASProtocolPath+req.Protocol, &proto); err != nil {
+			if err := requestDo[api.ASProtocolResponse](client.CreateHTTPClient(as.URL, a.Cfg.DisableTLSValidation), as.RequestUrl()+api.ASProtocolPath+req.Protocol, &proto); err != nil {
 				log.WithError(err).Error("unable to get 'protocol' from application service")
 				continue
 			}
@@ -320,7 +319,7 @@ func (a *AppServiceQueryAPI) Protocols(
 	for _, as := range a.Cfg.Derived.ApplicationServices {
 		for _, p := range as.Protocols {
 			var proto api.ASProtocolResponse
-			if err := requestDo[api.ASProtocolResponse](a.HTTPClient, as.URL+api.ASProtocolPath+p, &proto); err != nil {
+			if err := requestDo[api.ASProtocolResponse](client.CreateHTTPClient(as.URL, a.Cfg.DisableTLSValidation), as.RequestUrl()+api.ASProtocolPath+p, &proto); err != nil {
 				log.WithError(err).Error("unable to get 'protocol' from application service")
 				continue
 			}
