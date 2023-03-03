@@ -88,7 +88,7 @@ func (a *ApplicationService) IsUnixSocketUrl() bool {
 }
 func (a *ApplicationService) RequestUrl() string {
 	if a.IsUnixSocketUrl() {
-		return fmt.Sprintf("http://unix%s", a.URL)
+		return fmt.Sprintf("http://unix")
 	} else {
 		return a.URL
 	}
