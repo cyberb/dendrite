@@ -292,6 +292,14 @@ func (ua *fakeUserInternalAPI) QueryAccountByPassword(ctx context.Context, req *
 	return nil
 }
 
+func (ua *fakeUserInternalAPI) QueryAccountByLocalpart(ctx context.Context, req *uapi.QueryAccountByLocalpartRequest, res *uapi.QueryAccountByLocalpartResponse) error {
+	return nil
+}
+
+func (ua *fakeUserInternalAPI) PerformAccountCreation(ctx context.Context, req *uapi.PerformAccountCreationRequest, res *uapi.PerformAccountCreationResponse) error {
+	return nil
+}
+
 func (ua *fakeUserInternalAPI) PerformLoginTokenDeletion(ctx context.Context, req *uapi.PerformLoginTokenDeletionRequest, res *uapi.PerformLoginTokenDeletionResponse) error {
 	ua.DeletedTokens = append(ua.DeletedTokens, req.Token)
 	return nil

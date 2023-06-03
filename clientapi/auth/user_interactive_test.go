@@ -45,6 +45,14 @@ func (d *fakeAccountDatabase) QueryAccountByPassword(ctx context.Context, req *a
 	return nil
 }
 
+func (d *fakeAccountDatabase) QueryAccountByLocalpart(ctx context.Context, req *api.QueryAccountByLocalpartRequest, res *api.QueryAccountByLocalpartResponse) error {
+	return nil
+}
+
+func (d *fakeAccountDatabase) PerformAccountCreation(ctx context.Context, req *api.PerformAccountCreationRequest, res *api.PerformAccountCreationResponse) error {
+	return nil
+}
+
 func setup() *UserInteractive {
 	cfg := &config.ClientAPI{
 		Matrix: &config.Global{
